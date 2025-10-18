@@ -2,7 +2,7 @@
 Post reader for Telegram channels - on-demand and continuous monitoring
 """
 import asyncio
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Callable
 from telethon import TelegramClient
 from telethon.tl.types import Channel, Chat, Message
 
@@ -16,16 +16,21 @@ class PostReader:
         self.is_monitoring = False
     
     async def read_posts_on_demand(self, client: TelegramClient, channel_username: str, 
-                                 limit: int = 10) -> List[Dict]:
+                                 limit: int = 10, log_func: Optional[Callable[[str], None]] = None) -> List[Dict]:
         """Read posts on-demand from a channel with pagination"""
+        def log(msg):
+            if log_func:
+                log_func(msg)
+            else:
+                print(msg)
         try:
-            print(f"\n📖 Reading posts from @{channel_username}...")
+            log(f"\n📖 Reading posts from @{channel_username}...")
             
             # Get channel entity
             entity = await client.get_entity(channel_username)
             
             if not isinstance(entity, (Channel, Chat)):
-                print(f"❌ {channel_username} is not a channel or chat")
+                log(f"❌ {channel_username} is not a channel or chat")
                 return []
             
             # Add human-like delay before reading
@@ -36,12 +41,12 @@ class PostReader:
             all_posts = []
             batch_count = 0
             
-            print(f"🔄 Starting from latest posts...")
-            print("=" * 80)
+            log(f"🔄 Starting from latest posts...")
+            log("=" * 80)
             
             while True:
                 batch_count += 1
-                print(f"\n📦 Batch {batch_count} - Loading {limit} posts...")
+                log(f"\n📦 Batch {batch_count} - Loading {limit} posts...")
                 
                 # Get messages starting from the last message ID
                 if last_message_id == 0:
@@ -52,18 +57,18 @@ class PostReader:
                     messages = await client.get_messages(entity, limit=limit, max_id=last_message_id)
                 
                 if not messages:
-                    print(f"📭 No more messages found")
+                    log(f"📭 No more messages found")
                     break
                 
-                print(f"✅ Found {len(messages)} messages in this batch")
+                log(f"✅ Found {len(messages)} messages in this batch")
                 
                 # Process each message in this batch
                 batch_posts = []
                 for i, message in enumerate(messages, 1):
                     global_index = len(all_posts) + i
-                    print(f"\n📄 Processing post {global_index}...")
+                    log(f"\n📄 Processing post {global_index}...")
                     
-                    post_data = await self._format_message(message, global_index)
+                    post_data = await self._format_message(message, global_index, log_func=log_func)
                     batch_posts.append(post_data)
                     all_posts.append(post_data)
                     
@@ -72,24 +77,24 @@ class PostReader:
                     
                     # Show progress
                     if i % 5 == 0 or i == len(messages):
-                        print(f"⏳ Processed {i}/{len(messages)} posts in this batch...")
+                        log(f"⏳ Processed {i}/{len(messages)} posts in this batch...")
                 
                 # Update last message ID for next batch
                 last_message_id = messages[-1].id
                 
                 # Ask user if they want to continue
-                print(f"\n📊 Total posts read so far: {len(all_posts)}")
-                print("=" * 50)
+                log(f"\n📊 Total posts read so far: {len(all_posts)}")
+                log("=" * 50)
                 
                 while True:
                     choice = input("\n🔄 Continue reading older posts? (c)ontinue/(e)xit/(s)how more/(f)ile: ").strip().lower()
                     
                     if choice in ['c', 'continue']:
-                        print("⏳ Loading next batch...")
+                        log("⏳ Loading next batch...")
                         await human_behavior.random_delay(1, 3)
                         break
                     elif choice in ['e', 'exit']:
-                        print("✅ Reading completed!")
+                        log("✅ Reading completed!")
                         # Ask if user wants to save to file
                         save_choice = input("💾 Save posts to file? (y/N): ").strip().lower()
                         if save_choice == 'y':
@@ -97,32 +102,37 @@ class PostReader:
                         return all_posts
                     elif choice in ['s', 'show']:
                         # Show a summary of what we've read so far
-                        print(f"\n📋 Summary of {len(all_posts)} posts read:")
+                        log(f"\n📋 Summary of {len(all_posts)} posts read:")
                         for i, post in enumerate(all_posts[-5:], len(all_posts)-4):  # Show last 5
-                            print(f"  {i}. [{post['date']}] {post['text'][:50]}...")
+                            log(f"  {i}. [{post['date']}] {post['text'][:50]}...")
                         if len(all_posts) > 5:
-                            print(f"  ... and {len(all_posts) - 5} more posts")
+                            log(f"  ... and {len(all_posts) - 5} more posts")
                         continue
                     elif choice in ['f', 'file']:
                         # Save current posts to file
                         await self._save_posts_to_file(all_posts, channel_username)
                         continue
                     else:
-                        print("❌ Invalid choice. Please enter 'c' (continue), 'e' (exit), 's' (show), or 'f' (file)")
+                        log("❌ Invalid choice. Please enter 'c' (continue), 'e' (exit), 's' (show), or 'f' (file)")
                         continue
                 
                 # Add delay between batches
                 await human_behavior.random_delay(2, 5)
             
-            print(f"\n✅ Finished reading all available posts ({len(all_posts)} total)")
+            log(f"\n✅ Finished reading all available posts ({len(all_posts)} total)")
             return all_posts
             
         except Exception as e:
-            print(f"❌ Error reading posts from @{channel_username}: {e}")
+            log(f"❌ Error reading posts from @{channel_username}: {e}")
             return []
     
-    async def _format_message(self, message: Message, index: int) -> Dict:
-        """Format a message for display"""
+    async def _format_message(self, message: Message, index: int, log_func: Optional[Callable[[str], None]] = None) -> Dict:
+        """Format a message for display (with logging)"""
+        def log(msg):
+            if log_func:
+                log_func(msg)
+            else:
+                print(msg)
         # Basic message info
         post_data = {
             'index': index,
@@ -135,42 +145,33 @@ class PostReader:
             'forwards': getattr(message, 'forwards', None),
             'replies': getattr(message, 'replies', None)
         }
-        
         # Media information
         if message.media:
             media_type = type(message.media).__name__
             post_data['media_type'] = media_type
-        
         # Display the message
-        print(f"\n📄 Message #{index}")
-        print(f"🆔 ID: {message.id}")
-        print(f"📅 Date: {post_data['date']}")
-        print(f"👤 Sender: {message.sender_id}")
-        
+        log(f"\n📄 Message #{index}")
+        log(f"🆔 ID: {message.id}")
+        log(f"📅 Date: {post_data['date']}")
+        log(f"👤 Sender: {message.sender_id}")
         if post_data['views']:
-            print(f"👀 Views: {post_data['views']}")
+            log(f"👀 Views: {post_data['views']}")
         if post_data['forwards']:
-            print(f"🔄 Forwards: {post_data['forwards']}")
+            log(f"🔄 Forwards: {post_data['forwards']}")
         if post_data['replies']:
-            print(f"💬 Replies: {post_data['replies']}")
-        
+            log(f"💬 Replies: {post_data['replies']}")
         if post_data['media_type']:
-            print(f"📎 Media: {post_data['media_type']}")
-        
+            log(f"📎 Media: {post_data['media_type']}")
         if post_data['text']:
-            # Truncate long text for display
             display_text = post_data['text']
             if len(display_text) > 200:
                 display_text = display_text[:200] + "..."
-            print(f"📝 Text: {display_text}")
+            log(f"📝 Text: {display_text}")
         else:
-            print("📝 Text: [No text content]")
-        
-        print("-" * 40)
-        
+            log("📝 Text: [No text content]")
+        log("-" * 40)
         # Add a small delay between messages for better readability
         await human_behavior.random_delay(0.5, 1.5)
-        
         return post_data
     
     async def _save_posts_to_file(self, posts: List[Dict], channel_username: str) -> None:

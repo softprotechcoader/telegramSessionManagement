@@ -60,6 +60,7 @@ class TelegramAutomation:
         print("7. 📁 List available sessions")
         print("8. 🧪 Test session")
         print("9. 🗑️ Delete session")
+        print("10. 🧹 Cleanup sessions")
         print("0. 🚪 Exit")
         print("-" * 30)
     
@@ -352,6 +353,12 @@ class TelegramAutomation:
         else:
             print("❌ Deletion cancelled")
     
+    async def cleanup_sessions(self):
+        """Clean up corrupted session files"""
+        print("\n🧹 Cleaning up session files...")
+        session_manager.cleanup_sessions()
+        print("✅ Session cleanup completed")
+    
     async def run(self):
         """Main application loop"""
         self.display_banner()
@@ -359,7 +366,7 @@ class TelegramAutomation:
         while self.is_running:
             try:
                 self.display_menu()
-                choice = input("\n🎯 Select option (0-9): ").strip()
+                choice = input("\n🎯 Select option (0-10): ").strip()
                 
                 if choice == '1':
                     await self.generate_excel_template()
@@ -379,6 +386,8 @@ class TelegramAutomation:
                     await self.test_session()
                 elif choice == '9':
                     await self.delete_session()
+                elif choice == '10':
+                    await self.cleanup_sessions()
                 elif choice == '0':
                     print("\n👋 Goodbye!")
                     self.is_running = False

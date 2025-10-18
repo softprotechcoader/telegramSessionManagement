@@ -196,3 +196,39 @@ node_modules/
 # Temporary directories
 temp/
 tmp/
+
+# Windows GUI Application specific
+# ==========================================
+
+# PyInstaller build files
+build/
+dist/
+*.spec
+
+# GUI assets (if large)
+assets/icons/*.ico
+assets/images/*.png
+assets/images/*.jpg
+
+# Windows executable
+*.exe
+*.msi
+
+# GUI cache files
+__pycache__/gui/
+*.pyc
+
+# Temporary GUI files
+*.tmp
+*.temp
+
+# Standalone application files
+TelegramAutomation.exe
+TelegramAutomation.spec
+
+# Build artifacts
+*.log
+*.manifest
+
+# Session fix script (temporary)
+fix_sessions.py

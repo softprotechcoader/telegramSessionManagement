@@ -172,12 +172,22 @@ class SessionManager:
         return sorted(sessions)
     
     async def load_session(self, phone_number: str, api_id: int, api_hash: str) -> Optional[TelegramClient]:
-        """Load an existing session"""
+        """Load an existing session with improved error handling"""
         session_path = self.get_session_path(phone_number)
         
         if not os.path.exists(session_path):
             print(f"❌ Session not found for {phone_number}")
             return None
+        
+        # Check for journal file and clean it up
+        journal_path = f"{session_path}-journal"
+        if os.path.exists(journal_path):
+            print(f"⚠️ Found journal file, cleaning up...")
+            try:
+                os.remove(journal_path)
+                print(f"✅ Journal file removed")
+            except Exception as e:
+                print(f"⚠️ Could not remove journal file: {e}")
         
         try:
             client = TelegramClient(session_path, api_id, api_hash)
@@ -193,6 +203,41 @@ class SessionManager:
                 
         except Exception as e:
             print(f"❌ Error loading session for {phone_number}: {e}")
+            # Try to clean up corrupted session
+            if "database is locked" in str(e).lower():
+                print(f"🔧 Attempting to fix locked database...")
+                try:
+                    # Remove journal file if it exists
+                    journal_path = f"{session_path}-journal"
+                    if os.path.exists(journal_path):
+                        os.remove(journal_path)
+                        print(f"✅ Removed journal file")
+                    
+                    # Try to reconnect after cleanup
+                    try:
+                        await client.disconnect()
+                    except:
+                        pass
+                    
+                    # Wait a moment before retry
+                    import asyncio
+                    await asyncio.sleep(2)
+                    
+                    # Retry connection
+                    client = TelegramClient(session_path, api_id, api_hash)
+                    await client.connect()
+                    
+                    if await client.is_user_authorized():
+                        print(f"✅ Session loaded successfully after cleanup")
+                        return client
+                    else:
+                        print(f"❌ Session still not authorized after cleanup")
+                        await client.disconnect()
+                        return None
+                        
+                except Exception as retry_error:
+                    print(f"❌ Failed to fix session: {retry_error}")
+                    return None
             return None
     
     async def test_session(self, client: TelegramClient) -> bool:
@@ -213,6 +258,16 @@ class SessionManager:
             try:
                 os.remove(session_path)
                 print(f"✅ Session deleted for {phone_number}")
+                
+                # Also remove journal file if it exists
+                journal_path = f"{session_path}-journal"
+                if os.path.exists(journal_path):
+                    try:
+                        os.remove(journal_path)
+                        print(f"✅ Journal file also removed")
+                    except:
+                        pass
+                        
                 return True
             except Exception as e:
                 print(f"❌ Error deleting session for {phone_number}: {e}")
@@ -220,6 +275,21 @@ class SessionManager:
         else:
             print(f"⚠️ Session not found for {phone_number}")
             return False
+    
+    def cleanup_sessions(self) -> None:
+        """Clean up corrupted session files"""
+        print("🧹 Cleaning up session files...")
+        
+        for session_file in self.sessions_dir.glob("session_*.session"):
+            journal_path = f"{session_file}-journal"
+            if os.path.exists(journal_path):
+                try:
+                    os.remove(journal_path)
+                    print(f"✅ Cleaned journal file for {session_file.name}")
+                except Exception as e:
+                    print(f"⚠️ Could not clean journal file for {session_file.name}: {e}")
+        
+        print("✅ Session cleanup completed")
     
     def list_sessions(self) -> None:
         """List all available sessions"""

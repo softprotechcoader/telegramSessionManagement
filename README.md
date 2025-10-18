@@ -14,17 +14,37 @@ A comprehensive Telegram automation system built with Telethon 1.41.0 that provi
 
 ## Installation
 
+### **Option 1: Console Application**
 1. **Clone or download the project files**
-
 2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
-
-3. **Run the application**:
+3. **Run the console application**:
    ```bash
    python main.py
    ```
+
+### **Option 2: Windows GUI Application**
+1. **Run the setup script**:
+   ```bash
+   python setup_gui.py
+   ```
+2. **Launch the GUI application**:
+   ```bash
+   python gui_app.py
+   ```
+   Or double-click `run_gui.bat`
+
+### **Option 3: Standalone Executable**
+1. **Build the executable**:
+   ```bash
+   python build_exe.py
+   ```
+2. **Run the standalone executable**:
+   - Navigate to `dist/` folder
+   - Double-click `TelegramAutomation.exe`
+   - No Python installation required!
 
 ## Quick Start
 
