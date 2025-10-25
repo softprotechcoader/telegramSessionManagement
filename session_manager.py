@@ -310,17 +310,45 @@ class SessionManager:
         from excel_manager import excel_manager
         accounts = excel_manager.load_accounts()
         
+        if not accounts:
+            print(f"❌ No accounts loaded from Excel file")
+            return None
+        
+        # Debug: Print what we're looking for and what's available
+        print(f"🔍 Looking for phone: '{phone_number}'")
+        print(f"📊 Available phones in Excel: {[acc.get('Mobile_Number', 'No phone') for acc in accounts]}")
+        
         # Try exact match first
         for account in accounts:
             if account.get("Mobile_Number") == phone_number:
+                print(f"✅ Found exact match: {account['Mobile_Number']}")
                 return account
         
         # Try without + prefix
-        clean_phone = phone_number.replace("+", "")
+        clean_phone = phone_number.replace("+", "").replace("-", "").replace(" ", "")
         for account in accounts:
-            if account.get("Mobile_Number", "").replace("+", "") == clean_phone:
+            account_phone = account.get("Mobile_Number", "").replace("+", "").replace("-", "").replace(" ", "")
+            if account_phone == clean_phone:
+                print(f"✅ Found match after cleaning: {account['Mobile_Number']} -> {phone_number}")
                 return account
         
+        # Try with + prefix if original doesn't have it
+        if not phone_number.startswith("+"):
+            plus_phone = "+" + phone_number
+            for account in accounts:
+                if account.get("Mobile_Number") == plus_phone:
+                    print(f"✅ Found match with + prefix: {account['Mobile_Number']}")
+                    return account
+        
+        # Try without + prefix if original has it
+        if phone_number.startswith("+"):
+            no_plus_phone = phone_number[1:]
+            for account in accounts:
+                if account.get("Mobile_Number") == no_plus_phone:
+                    print(f"✅ Found match without + prefix: {account['Mobile_Number']}")
+                    return account
+        
+        print(f"❌ No account found for phone: {phone_number}")
         return None
 
 

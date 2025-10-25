@@ -21,6 +21,7 @@ class TelegramAutomationGUI:
         self.root = root
         self.is_monitoring = False
         self.monitoring_thread = None
+        self.subscribed_channels = []  # Store fetched channels
         
         # Create main interface
         self.create_widgets()
@@ -129,18 +130,52 @@ class TelegramAutomationGUI:
         
     def create_monitor_tab(self):
         """Create channel monitoring tab"""
-        # Channel input section
-        channel_frame = ttk.LabelFrame(self.monitor_frame, text="Channel Configuration")
-        channel_frame.pack(fill=tk.X, padx=10, pady=5)
+        # Monitoring mode selection
+        mode_frame = ttk.LabelFrame(self.monitor_frame, text="Monitoring Mode")
+        mode_frame.pack(fill=tk.X, padx=10, pady=5)
         
-        ttk.Label(channel_frame, text="Channel Username:").pack(side=tk.LEFT, padx=5)
-        self.channel_entry = ttk.Entry(channel_frame, width=30)
+        self.monitor_mode = tk.StringVar(value="specific")
+        
+        specific_radio = ttk.Radiobutton(mode_frame, text="Monitor Specific Channel", 
+                                       variable=self.monitor_mode, value="specific",
+                                       command=self.on_monitor_mode_change)
+        specific_radio.pack(side=tk.LEFT, padx=10, pady=5)
+        
+        all_radio = ttk.Radiobutton(mode_frame, text="Monitor All Subscribed Channels", 
+                                  variable=self.monitor_mode, value="all",
+                                  command=self.on_monitor_mode_change)
+        all_radio.pack(side=tk.LEFT, padx=10, pady=5)
+        
+        # Channel input section (for specific channel monitoring)
+        self.channel_frame = ttk.LabelFrame(self.monitor_frame, text="Channel Configuration")
+        self.channel_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(self.channel_frame, text="Channel Username:").pack(side=tk.LEFT, padx=5)
+        self.channel_entry = ttk.Entry(self.channel_frame, width=30)
         self.channel_entry.pack(side=tk.LEFT, padx=5)
         
-        ttk.Label(channel_frame, text="Check Interval (seconds):").pack(side=tk.LEFT, padx=5)
+        # Interval configuration
+        interval_frame = ttk.LabelFrame(self.monitor_frame, text="Monitoring Settings")
+        interval_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        ttk.Label(interval_frame, text="Check Interval (seconds):").pack(side=tk.LEFT, padx=5)
         self.interval_var = tk.StringVar(value="30")
-        self.interval_entry = ttk.Entry(channel_frame, textvariable=self.interval_var, width=10)
+        self.interval_entry = ttk.Entry(interval_frame, textvariable=self.interval_var, width=10)
         self.interval_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Channel list display (for all channels mode)
+        self.channel_list_frame = ttk.LabelFrame(self.monitor_frame, text="Subscribed Channels")
+        self.channel_list_frame.pack(fill=tk.X, padx=10, pady=5)
+        
+        self.fetch_channels_btn = ttk.Button(self.channel_list_frame, text="Fetch Subscribed Channels", 
+                                           command=self.fetch_subscribed_channels)
+        self.fetch_channels_btn.pack(side=tk.LEFT, padx=5, pady=5)
+        
+        self.channels_count_label = ttk.Label(self.channel_list_frame, text="No channels loaded")
+        self.channels_count_label.pack(side=tk.LEFT, padx=10)
+        
+        # Hide channel list frame initially
+        self.channel_list_frame.pack_forget()
         
         # Session selection
         session_frame = ttk.LabelFrame(self.monitor_frame, text="Session Selection")
@@ -266,9 +301,9 @@ class TelegramAutomationGUI:
                 filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
             )
             if file_path:
-                # Update config to use selected file
-                from config import config
-                config.EXCEL_FILE = file_path
+                # Update excel manager to use selected file
+                from excel_manager import excel_manager
+                excel_manager.excel_file = file_path
                 self.refresh_accounts()
                 messagebox.showinfo("Success", f"Loaded Excel file: {file_path}")
         except Exception as e:
@@ -329,6 +364,124 @@ class TelegramAutomationGUI:
                 
         except Exception as e:
             print(f"Error updating session combos: {e}")
+    
+    # Channel Monitoring Methods
+    def on_monitor_mode_change(self):
+        """Handle monitoring mode change"""
+        mode = self.monitor_mode.get()
+        if mode == "specific":
+            self.channel_frame.pack(fill=tk.X, padx=10, pady=5)
+            self.channel_list_frame.pack_forget()
+        else:  # mode == "all"
+            self.channel_frame.pack_forget()
+            self.channel_list_frame.pack(fill=tk.X, padx=10, pady=5)
+    
+    def fetch_subscribed_channels(self):
+        """Fetch all subscribed channels"""
+        session_phone = self.session_var.get()
+        if not session_phone:
+            messagebox.showwarning("Warning", "Please select a session first")
+            return
+        
+        def fetch_channels():
+            try:
+                self.update_status("Fetching subscribed channels...")
+                self.fetch_channels_btn.config(state=tk.DISABLED)
+                
+                # Debug: Log the phone number being used
+                self.root.after(0, lambda: self.log_message(self.monitor_text, 
+                    f"🔍 Looking for account with phone: {session_phone}"))
+                
+                # Run in async loop
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # Get account and create client
+                account = session_manager.find_account_by_phone(session_phone)
+                if not account:
+                    # Try to load all accounts for debugging
+                    all_accounts = excel_manager.load_accounts()
+                    self.root.after(0, lambda: self.log_message(self.monitor_text, 
+                        f"❌ Account not found for {session_phone}"))
+                    self.root.after(0, lambda: self.log_message(self.monitor_text, 
+                        f"📊 Available accounts in Excel: {[acc.get('Mobile_Number', 'No phone') for acc in all_accounts]}"))
+                    
+                    # Try alternative phone formats
+                    alt_phone_formats = [
+                        session_phone,
+                        session_phone.replace("+", ""),
+                        "+" + session_phone.replace("+", ""),
+                        session_phone.replace("-", "").replace(" ", "")
+                    ]
+                    
+                    for alt_phone in alt_phone_formats:
+                        account = session_manager.find_account_by_phone(alt_phone)
+                        if account:
+                            self.root.after(0, lambda p=alt_phone: self.log_message(self.monitor_text, 
+                                f"✅ Found account using format: {p}"))
+                            break
+                    
+                    if not account:
+                        self.root.after(0, lambda: messagebox.showerror("Error", 
+                            f"Account not found for {session_phone}. Please check your Excel file contains this phone number."))
+                        return
+                
+                self.root.after(0, lambda: self.log_message(self.monitor_text, 
+                    f"✅ Found account: {account['Mobile_Number']} (API: {account['API_Key']})"))
+                
+                async def get_channels():
+                    from telethon import TelegramClient
+                    client = TelegramClient(
+                        session_manager.get_session_path(session_phone),
+                        account['API_Key'],
+                        account['Hash_Key']
+                    )
+                    
+                    await client.start()
+                    
+                    channels = []
+                    async for dialog in client.iter_dialogs():
+                        if dialog.is_channel and not dialog.is_group:
+                            channels.append({
+                                'title': dialog.title,
+                                'username': dialog.entity.username if dialog.entity.username else f"ID:{dialog.entity.id}",
+                                'id': dialog.entity.id
+                            })
+                    
+                    await client.disconnect()
+                    return channels
+                
+                channels = loop.run_until_complete(get_channels())
+                self.subscribed_channels = channels
+                
+                # Update UI in main thread
+                self.root.after(0, lambda: self.channels_count_label.config(
+                    text=f"Found {len(channels)} subscribed channels"))
+                self.root.after(0, lambda: self.log_message(self.monitor_text, 
+                    f"✅ Fetched {len(channels)} subscribed channels"))
+                
+                # Log channel names
+                for channel in channels[:10]:  # Show first 10
+                    self.root.after(0, lambda ch=channel: self.log_message(self.monitor_text, 
+                        f"📺 {ch['title']} (@{ch['username']})"))
+                
+                if len(channels) > 10:
+                    self.root.after(0, lambda: self.log_message(self.monitor_text, 
+                        f"... and {len(channels) - 10} more channels"))
+                
+            except Exception as e:
+                error_msg = f"Failed to fetch channels: {e}"
+                self.root.after(0, lambda: messagebox.showerror("Error", error_msg))
+                self.root.after(0, lambda: self.log_message(self.monitor_text, f"❌ Error fetching channels: {e}"))
+                import traceback
+                self.root.after(0, lambda: self.log_message(self.monitor_text, f"🔍 Traceback: {traceback.format_exc()}"))
+            finally:
+                self.root.after(0, lambda: self.fetch_channels_btn.config(state=tk.NORMAL))
+                self.root.after(0, lambda: self.update_status("Ready"))
+        
+        # Run in separate thread
+        thread = threading.Thread(target=fetch_channels, daemon=True)
+        thread.start()
             
     # Session Management Methods
     def create_all_sessions(self):
@@ -429,15 +582,29 @@ class TelegramAutomationGUI:
     # Monitoring Methods
     def start_monitoring(self):
         """Start channel monitoring"""
-        channel = self.channel_entry.get().strip()
-        if not channel:
-            messagebox.showwarning("Warning", "Please enter a channel username")
-            return
-            
+        mode = self.monitor_mode.get()
+        
+        # Get session
         session_phone = self.session_var.get()
         if not session_phone:
             messagebox.showwarning("Warning", "Please select a session")
             return
+        
+        # Validate based on mode
+        if mode == "specific":
+            channel = self.channel_entry.get().strip()
+            if not channel:
+                messagebox.showwarning("Warning", "Please enter a channel username")
+                return
+            channels_to_monitor = [channel]
+        else:  # mode == "all"
+            if not hasattr(self, 'subscribed_channels') or not self.subscribed_channels:
+                messagebox.showwarning("Warning", "Please fetch subscribed channels first")
+                return
+            channels_to_monitor = [ch['username'] for ch in self.subscribed_channels if ch['username'] != f"ID:{ch['id']}"]
+            if not channels_to_monitor:
+                messagebox.showwarning("Warning", "No channels with usernames found. Most channels need usernames to be monitored.")
+                return
             
         try:
             interval = int(self.interval_var.get())
@@ -449,7 +616,17 @@ class TelegramAutomationGUI:
                 self.is_monitoring = True
                 self.start_monitor_btn.config(state=tk.DISABLED)
                 self.stop_monitor_btn.config(state=tk.NORMAL)
-                self.update_status(f"Monitoring {channel}...")
+                
+                if mode == "specific":
+                    self.update_status(f"Monitoring {channels_to_monitor[0]}...")
+                    self.log_message(self.monitor_text, f"🔔 Starting monitoring for @{channels_to_monitor[0]}")
+                else:
+                    self.update_status(f"Monitoring {len(channels_to_monitor)} channels...")
+                    self.log_message(self.monitor_text, f"🔔 Starting monitoring for {len(channels_to_monitor)} channels:")
+                    for ch in channels_to_monitor[:5]:  # Show first 5
+                        self.log_message(self.monitor_text, f"  📺 @{ch}")
+                    if len(channels_to_monitor) > 5:
+                        self.log_message(self.monitor_text, f"  ... and {len(channels_to_monitor) - 5} more")
                 
                 # Run monitoring in async loop
                 loop = asyncio.new_event_loop()
@@ -468,10 +645,37 @@ class TelegramAutomationGUI:
                 if not client:
                     self.log_message(self.monitor_text, f"❌ Failed to load session for {session_phone}")
                     return
-                    
+                
+                # Start monitoring with interval checking
+                async def monitor_channels():
+                    try:
+                        while self.is_monitoring:
+                            for channel in channels_to_monitor:
+                                if not self.is_monitoring:
+                                    break
+                                try:
+                                    # Get recent messages from channel
+                                    entity = await client.get_entity(channel)
+                                    messages = await client.get_messages(entity, limit=5)
+                                    
+                                    for message in messages:
+                                        if message.text and message.date:
+                                            # Log new message (you can add timestamp checking here)
+                                            self.log_message(self.monitor_text, 
+                                                f"� New from @{channel}: {message.text[:100]}{'...' if len(message.text) > 100 else ''}")
+                                    
+                                except Exception as e:
+                                    self.log_message(self.monitor_text, f"⚠️ Error monitoring @{channel}: {e}")
+                            
+                            # Wait for the specified interval
+                            await asyncio.sleep(interval)
+                    except Exception as e:
+                        self.log_message(self.monitor_text, f"❌ Monitoring error: {e}")
+                    finally:
+                        await client.disconnect()
+                
                 # Start monitoring
-                self.log_message(self.monitor_text, f"🔔 Starting monitoring for @{channel}")
-                loop.run_until_complete(notification_service.start_monitoring([client], [channel]))
+                loop.run_until_complete(monitor_channels())
                 
             except Exception as e:
                 self.log_message(self.monitor_text, f"❌ Monitoring error: {e}")
